@@ -1,0 +1,877 @@
+% Microglia vs Neuron Interactions/Co-localization Analysis
+% Ali Ozgur Argunsah and Lorenzo Gesuita, 2017, Zurich.
+% Input: 2 channel RGB z-stack
+
+%% This part is for automatic extraction First Part, to create .mat files
+clear all
+close all
+clc
+
+% Change data folder accordingly
+dataFolder  = 'W:\Assembly\Lorenzo\Pics_Confocal\Confocal_Microglia Project Images\Microglia_Iontoporations_mSyp_Cx3cl1';
+
+% Select the data to be analyzed
+D1          = uipickfiles('FilterSpec',dataFolder);
+
+% Change the save folder accordingly
+saveFolder  = 'F:\Lorenzo';
+
+for i = 1:size(D1,2)
+    close all;
+    
+    % Create Info Structure
+    clear data;
+    data  = struct;
+
+    regexpInd       = regexp(D1{i},'\');
+    saveDataName    = D1{i}(regexpInd(end)+1:end);
+    saveDatanameInd = regexp(saveDataName,'\.');
+    saveDataName    = saveDataName(1:saveDatanameInd(end)-1);
+    
+    saveDatanameEmptySpaces = regexp(saveDataName,' ');
+    for tt = 1:length(saveDatanameEmptySpaces)
+        saveDataName(saveDatanameEmptySpaces(tt)) = '_';
+    end
+    
+    data.name           = D1{i};
+    data.analysisday    = date;
+    data.Analyzer       = 'Automatic';  % What is the name of the person who analyzed the data
+    data.DataCollected  = 'Lorenzo';    % What is the name of the person who analyzed the data
+    data.saveDataName   = saveDataName;
+
+    data_name_all       = fullfile(D1{i});
+    temp                = regexp(data_name_all,'/');
+
+    if isempty(temp)
+        temp = regexp(data_name_all,'\');
+    end
+
+    data_name           = data_name_all(temp(end)+1:end);
+    tempDot             = regexp(data_name,'\.');
+
+    %saveFolder          = data_name_all(1:temp(end)); % Find Data Folder
+    data.saveFolder     = saveFolder;
+
+    z_param = 2;
+    
+    clear rTemp;
+    
+    rTemp   = bfopen(D1{i});
+    zSize   = size(rTemp{1,1},1);
+
+    % Create Z-Stack with Interleaved Channels
+    clear temp;
+    clear Icube;
+    
+    for z = 1:zSize
+        temp             = rTemp{1,1}{z,1};
+        Icube(:,:,z)     = double(temp);
+        if (z == zSize)
+            metadata = rTemp{1,2};
+        end
+    end
+    z_num = size(Icube,3);
+
+    I1      = double(Icube(:,:,1:2:z_num));
+    I2      = double(Icube(:,:,2:2:z_num));
+    
+    clear I1norm;
+    clear I2norm;
+    
+    I1norm   = I1/max(I1(:));
+    I2norm   = I2/max(I2(:));
+    
+    clear cube;
+    
+    cube{1} = I1norm;
+    cube{2} = I2norm;
+    
+    save(fullfile(saveFolder,sprintf('%s.mat',saveDataName)), 'cube'); 
+end
+
+
+%% This part is for automatic extraction Second Part, to create .info files
+clear all
+close all
+clc
+
+% % sudo mount -o remount,rw '/Volumes/workspace/Assembly/Ali'
+% Connect to Server
+%system('\\130.60.51.12\Workspace\Assembly\Lorenzo');
+
+% Read File
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\bfmatlab
+addpath(genpath('W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox'));
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\JermanEnhancementFilter
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\fastMarch
+
+dataFolder  = 'F:\Lorenzo';
+D1              = uipickfiles('FilterSpec',dataFolder);
+
+for i = 1:size(D1,2)
+    i
+    load(D1{i}); 
+    puncta      = bil_wiener_filt(cube{1},3,1);
+    tomato      = cube{2};
+    
+    thr         = graythresh(puncta(:));
+    tomato_thr  = graythresh(tomato(:));
+    bw_tomato   = tomato>tomato_thr;
+
+    bw          = (puncta>thr);
+    D           = bwdist(~bw);
+    D           = -D;
+    D(~bw)      = Inf;
+    
+    L           = watershed(D);
+    L(~bw)      = 0;
+    
+    data.L          = L;
+    data.puncta     = puncta;
+    data.bw_tomato  = tomato;
+    data.tomato     = tomato;
+    
+    pos  = regexp(D1{i},'\.');
+    save(fullfile(sprintf('%s_info.mat',D1{i}(1:pos(end)-1))), '-struct', 'data');
+end
+%% This Part is for Manual Tracing 
+
+clear all
+close all
+clc
+
+% % sudo mount -o remount,rw '/Volumes/workspace/Assembly/Ali'
+% Connect to Server
+%system('\\130.60.51.12\Workspace\Assembly\Lorenzo');
+
+% Read File
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\bfmatlab
+addpath(genpath('W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox'));
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\JermanEnhancementFilter
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\fastMarch
+
+dataFolder  = 'F:\Lorenzo\*info.mat';
+D1              = uipickfiles('FilterSpec',dataFolder);
+
+xy_size = 0.198;
+z_size  = 0.5;
+
+for i = 1:size(D1,2)
+   i
+   infoNum = struct;
+   
+   pos  = regexp(D1{i},'\.');
+   load(D1{i}); 
+   
+   smallTomatoBWF = puncta; %tomato;
+   figure, imshow(imcomplement(imadjust(adapthisteq(max(smallTomatoBWF,[],3)),[0 1])));
+   h = imcontrast(gca);
+   waitfor(h);
+   
+  % Optional Green Dots around synapses - 17072020 - Ali-Lorenzo Update
+%    L_zero = max(L,[],3);
+%    L_zero(L_zero>0) = 1;
+%    L_zero = logical(L_zero);
+%    L_zero = bwareafilt(L_zero,[1 100]);
+%    boundaries = bwboundaries(L_zero);
+%    numberOfBoundaries = size(boundaries, 1);
+%    for k = 1 : numberOfBoundaries
+%        thisBoundary = boundaries{k};
+%        hold on; plot(thisBoundary(:,2), thisBoundary(:,1), 'g', 'LineWidth', 1); % Change letter r to change color of the dots
+%    end
+
+   clear x;
+   clear y;
+
+   b      = 1000;
+   xx     = 1;
+   
+   while xx < b
+       clear x;
+       clear y;
+       clear z;
+       
+       [x,y] = ginputzoom;
+       
+       try
+       if length(x)>1
+       
+           hA = gca;
+           resetplotview(hA,'InitializeCurrentView');
+           set(hA,'xlim',[1 1600]);
+           set(hA,'ylim',[1 1600]);
+
+           for k = 1:length(x)
+               c    = max(squeeze(tomato(round(y(k)),round(x(k)),:)));
+               vals = find(squeeze(tomato(round(y(k)),round(x(k)),:))==c);
+               z(k) = mean(vals);
+           end
+
+           meanSL = [];
+           for n = 1:length(x)-1
+               SourcePoint    = [round(y(n))   round(x(n))   z(n)]';
+               StartPoint     = [round(y(n+1)) round(x(n+1)) z(n+1)]';
+
+               T1_FMM1        = msfm2d(double(max(smallTomatoBWF,[],3)+1e-8), SourcePoint(1:2), true, true);
+               T1_FMM2        = msfm2d(double(max(smallTomatoBWF,[],3)+1e-8), StartPoint(1:2) , true, true);
+
+               ShortestLine   = shortestpath(T1_FMM1,StartPoint(1:2),SourcePoint(1:2));
+               ShortestLine2  = shortestpath(T1_FMM2,SourcePoint(1:2),StartPoint(1:2));
+
+               meanSL         = [meanSL ;meanOfTwoLines(ShortestLine,ShortestLine2)];
+           end
+           hold on, 
+           hh = scatter(meanSL(:,2),meanSL(:,1),1,'.r');
+           drawnow;
+
+            answer = questdlg('Do you like the Tracing?', ...
+                'Tracing Quality', ...
+                'Yes','No','Done','Yes');
+            % Handle response
+            switch answer
+                case 'Yes'
+                    D            = diff(meanSL*xy_size,1,1);
+                    len          = double(trace(sqrt(D*D.')));
+                    len3D        = sqrt(len.^2+((z(2)-z(1))*z_size).^2);
+                    profileC     = improfile(max(double(tomato),[],3),meanSL(:,2),meanSL(:,1));
+                    profileL     = improfile(max(double(L)>0,[],3),meanSL(:,2),meanSL(:,1));
+                    diffProfileL = diff(profileL);
+
+                    [aaa1,bbb1]  = find(diffProfileL==1);
+                    [aaa2,bbb2]  = find(diffProfileL==-1);
+
+                    if aaa1(1) > aaa2(1)
+                        individualSizes{i,xx}(1) = aaa2(1)*xy_size;
+                        for s = 2:length(aaa2)
+                            individualSizes{i,xx}(s) = (aaa2(s) - aaa1(s-1))*xy_size;
+                        end
+                    else
+                        for s = 1:length(aaa2)
+                            individualSizes{i,xx}(s) = (aaa2(s) - aaa1(s))*xy_size;
+                        end
+                    end
+
+                    branchLen{i,xx} = len3D;
+                    numDendrites(i) = xx;
+                    shortestLinesAll{i,xx} = meanSL;
+                    xx = xx + 1;
+                case 'No'
+                    %hold on, plot(ShortestLine(:,2),ShortestLine(:,1),'k');
+                    %drawnow;
+                    %xx = xx - 1;
+                    delete(hh);
+                case 'Done'
+                    D            = diff(meanSL*xy_size,1,1);
+                    len          = double(trace(sqrt(D*D.')));
+                    len3D        = sqrt(len.^2+((z(2)-z(1))*z_size).^2);
+                    profileC     = improfile(max(double(tomato),[],3),meanSL(:,2),meanSL(:,1));
+                    profileL     = improfile(max(double(L)>0,[],3),meanSL(:,2),meanSL(:,1));
+                    diffProfileL = diff(profileL);
+
+                    [aaa1,bbb1]  = find(diffProfileL==1);
+                    [aaa2,bbb2]  = find(diffProfileL==-1);
+
+                    if aaa1(1) > aaa2(1)
+                        individualSizes{i,xx}(1) = aaa2(1)*xy_size;
+                        for s = 2:length(aaa2)
+                            individualSizes{i,xx}(s) = (aaa2(s) - aaa1(s-1))*xy_size
+                        end
+                    else
+                        for s = 1:length(aaa2)
+                            individualSizes{i,xx}(s) = (aaa2(s) - aaa1(s))*xy_size
+                        end
+                    end
+
+                    branchLen{i,xx} = len3D;
+                    numDendrites(i) = xx;
+                    shortestLinesAll{i,xx} = meanSL;
+
+                    b = xx;
+            end         
+       end
+       catch ME
+           ME
+           delete(hh);
+       end
+   end
+   
+   saveas(gcf,fullfile(sprintf('%s_figure.png',D1{i}(1:pos(end)-1))),'png');
+   
+   infoNum.individualSizes  = individualSizes;
+   infoNum.branchLen        = branchLen;
+   infoNum.numDendrites     = numDendrites(i);
+   infoNum.shortestLinesAll = shortestLinesAll;
+   infoNum.fileName         = D1{i};
+
+   save(fullfile(sprintf('%s_infoNums_20200901.mat',D1{i}(1:pos(end)-1))), '-struct', 'infoNum');
+   clear infoNum;
+   clear individualSizes;
+   clear branchLen;
+   clear shortestLinesAll;
+end
+
+%% Conversion on InfoNums Files to New Format for Analysis in R (txt - tab separated)
+% each column has in row one the lenght of the branch; each puncta size
+% is listed below.
+clc
+clear all
+close all
+
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\bfmatlab
+addpath(genpath('W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox'));
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\JermanEnhancementFilter
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\fastMarch
+
+% dataFolder  = 'W:\Lorenzo\Data_Microglia\Puncta-Ali';
+dataFolder  = 'F:\Lorenzo';
+D1              = uipickfiles('FilterSpec',dataFolder);
+
+for i = 1:size(D1,2)
+    load(D1{i});
+    [path,name,ext] = fileparts(D1{i});
+    newBranchLen      = cell2mat(branchLen);
+    
+    clear M;
+    maxSize = 0;
+    
+    for j = 1:size(individualSizes,1)
+        for k = 1:size(individualSizes(j,:),2)
+            temp = individualSizes{j,k};
+            if ~isempty(temp)
+                if length(temp) > maxSize
+                    maxSize = length(temp);
+                end
+            end
+        end
+        
+        M = nan(maxSize+1,size(individualSizes(j,:),2));
+        M(1,:) = newBranchLen;
+        
+        for k = 1:size(individualSizes(j,:),2)
+            temp = individualSizes{j,k};
+            if ~isempty(temp)
+                M(2:length(temp)+1,k) = temp;
+            end
+        end
+    end
+   % figure, imagesc(M(2:end,:),[0 7]);
+   % title(name);
+   % drawnow;
+    writematrix(M,fullfile(path,sprintf('%s_newFormat.txt',name)),'Delimiter','tab');
+  
+  Mcell{i} = M;
+end
+    
+%%
+allDensitiesPooled = nan(18,28);
+
+branchLenAll_dmso = [];
+densityAll_dmso   = [];
+densityAll_dmso_filtered = [];
+averageAll_dmso   = [];
+stdDevAll_dmso    = [];
+identityAll_dmso  = [];
+sizeFilterSize    = 1;
+
+figure,
+for i = 1:9
+    branchLenAll_dmso = [branchLenAll_dmso Mcell{i}(1,:)];
+    
+    nansize           = isnan(Mcell{i}(2:end,:));
+    nanSizeFiltered   = Mcell{i}(2:end,:);
+    nanSizeFiltered(nanSizeFiltered<sizeFilterSize) = nan;
+    nanSizeTwo        = isnan(nanSizeFiltered);
+    
+    densityAll_dmso   = [densityAll_dmso (size(nansize,1)-sum(nansize,1))./Mcell{i}(1,:)];
+    densityAll_dmso_filtered   = [densityAll_dmso_filtered (size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:)];
+    
+    allDensitiesPooled(i,1:length((size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:))) = (size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:);
+    
+    averageAll_dmso   = [averageAll_dmso nanmean(Mcell{i}(2:end,:),1)];
+    stdDevAll_dmso    = [stdDevAll_dmso nanstd(Mcell{i}(2:end,:),[],1)];
+    identityAll_dmso  = [identityAll_dmso i*ones(1,length(Mcell{i}(1,:)))];    
+    hold on, plot(i*ones(1,length((size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:))),...
+        (size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:),'r.','MarkerSize',20);
+    drawnow;
+end
+
+branchLenAll_plx = [];
+densityAll_plx   = [];
+densityAll_plx_filtered = [];
+averageAll_plx   = [];
+stdDevAll_plx    = [];
+identityAll_plx  = [];
+
+for i = 10:18
+    branchLenAll_plx = [branchLenAll_plx Mcell{i}(1,:)];
+    
+    nansize           = isnan(Mcell{i}(2:end,:));
+    nanSizeFiltered   = Mcell{i}(2:end,:);
+    nanSizeFiltered(nanSizeFiltered<sizeFilterSize) = nan;
+    nanSizeTwo        = isnan(nanSizeFiltered);
+    
+    densityAll_plx   = [densityAll_plx (size(nansize,1)-sum(nansize,1))./Mcell{i}(1,:)];
+    densityAll_plx_filtered   = [densityAll_plx_filtered (size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:)];
+    
+    allDensitiesPooled(i,1:length((size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:))) = (size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:);
+    
+    averageAll_plx   = [averageAll_plx nanmean(Mcell{i}(2:end,:),1)];
+    stdDevAll_plx    = [stdDevAll_plx nanstd(Mcell{i}(2:end,:),[],1)];
+    identityAll_plx  = [identityAll_plx i*ones(1,length(Mcell{i}(1,:)))]; 
+    hold on, plot(i*ones(1,length((size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:))),...
+        (size(nanSizeTwo,1)-sum(nanSizeTwo,1))./Mcell{i}(1,:),'r.','MarkerSize',20);
+    drawnow;
+end
+
+[ccc,aaa] = VL_KMEANS(allDensitiesPooled, 2, 'verbose', 'distance', 'l2', 'algorithm','elkan','NumRepetitions',10)
+
+saveDir = 'W:\Lorenzo\Pics_Confocal\Confocal_Microglia Project Images\Microglia_Iontoporations_mSyp\Results';
+
+
+plotTwoConditionsMax(densityAll_dmso_filtered(densityAll_dmso_filtered<0.6),densityAll_plx_filtered(densityAll_plx_filtered<0.6),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_noCondition','',0,0);
+
+plotTwoConditionsMax(densityAll_dmso_filtered(branchLenAll_dmso<100),densityAll_plx_filtered(branchLenAll_plx<100),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_shorterThan100','',0,0);
+plotTwoConditionsMax(densityAll_dmso_filtered(branchLenAll_dmso>25) ,densityAll_plx_filtered(branchLenAll_plx>25),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan25','',0,0);
+plotTwoConditionsMax(densityAll_dmso_filtered(branchLenAll_dmso>50) ,densityAll_plx_filtered(branchLenAll_plx>50),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan50','',0,0);
+plotTwoConditionsMax(densityAll_dmso_filtered(branchLenAll_dmso>100) ,densityAll_plx_filtered(branchLenAll_plx>100),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan100','',0,0);
+
+plotTwoConditionsMax(densityAll_dmso_filtered(branchLenAll_dmso>50 & branchLenAll_dmso<100),densityAll_plx_filtered(branchLenAll_plx>50 & branchLenAll_plx<100),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan50_smallerThan100','',0,0);
+%%
+plotTwoConditionsMax(densityAll_dmso,densityAll_plx,'DMSO','PLX',saveDir,'DMSO_PLX_density_w_noCondition','',0,0);
+plotTwoConditionsMax(densityAll_dmso(averageAll_dmso<1.5),densityAll_plx(averageAll_plx<1.5),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_smallerThanOnePointFive','',0,0);
+plotTwoConditionsMax(densityAll_dmso(averageAll_dmso>1),densityAll_plx(averageAll_plx>1),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_biggerThanOne','',0,0);
+plotTwoConditionsMax(densityAll_dmso(averageAll_dmso>2),densityAll_plx(averageAll_plx>2),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_biggerThanTwo','',0,0);
+plotTwoConditionsMax(densityAll_dmso(averageAll_dmso>3),densityAll_plx(averageAll_plx>3),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_biggerThanThree','',0,0);
+
+plotTwoConditionsMax(densityAll_dmso(branchLenAll_dmso<100),densityAll_plx(branchLenAll_plx<100),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_shorterThan100','',0,0);
+plotTwoConditionsMax(densityAll_dmso(branchLenAll_dmso>25),densityAll_plx(branchLenAll_plx>25),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan25','',0,0);
+plotTwoConditionsMax(densityAll_dmso(branchLenAll_dmso>50),densityAll_plx(branchLenAll_plx>50),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan50','',0,0);
+plotTwoConditionsMax(densityAll_dmso(branchLenAll_dmso>50 & branchLenAll_dmso<100),densityAll_plx(branchLenAll_plx>50 & branchLenAll_plx<100),'DMSO','PLX',saveDir,'DMSO_PLX_density_w_longerThan50_smallerThan100','',0,0);
+
+
+figure, gscatter(branchLenAll_plx,averageAll_plx,identityAll_plx);
+figure, gscatter(branchLenAll_dmso,averageAll_dmso,identityAll_dmso);
+
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FOR LORENZO: this code is to create the plots of puncta density
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+clear all
+close all
+clc
+
+
+plx_sizes    = [];
+plx_numbers  = [];
+plx_density  = [];
+plx_density_small    = [];
+plx_density_big      = [];
+plx_density_verybig  = [];
+plx_density_overall1 = [];
+plx_density_overall2 = [];
+plx_density_overall3 = [];
+
+cntr_sizes    = [];
+cntr_numbers  = [];
+cntr_density  = [];
+cntr_density_small = [];
+cntr_density_big = [];
+cntr_density_verybig = [];
+cntr_density_overall1 = [];
+cntr_density_overall2 = [];
+cntr_density_overall3 = [];
+
+smallSize   = [0.5 1.5];
+bigSize     = [1.5 4];
+veryBigSize = [4 7.5];
+
+% % sudo mount -o remount,rw '/Volumes/workspace/Assembly/Ali'
+% Connect to Server
+%system('\\130.60.51.12\Workspace\Assembly\Lorenzo');
+
+% Read File
+% Read File
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\bfmatlab
+addpath(genpath('W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox'));
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\JermanEnhancementFilter
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysis\Toolbox\fastMarch
+
+% dataFolder  = 'W:\Lorenzo\Data_Microglia\Puncta-Ali';
+dataFolder  = 'F:\Lorenzo';
+
+D1              = uipickfiles('FilterSpec',dataFolder);
+%load(fullfile('C:\Users\argunsah\Documents\MATLAB\TheoLabAnalysis\Classifiers','ECOC_classifier_Lorenzo_1600x1600_40X.mat'));
+
+xy_size = 0.198;
+z_size  = 0.5;    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FOR LORENZO: put the interval of picture of the PLX group (e.g. 1:5 means
+% that the pictures from 1 to 5 are the PLX trated cells
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i = 4:9
+    load(D1{i});
+    for j = 1:numDendrites
+        plx_sizes           = [plx_sizes   individualSizes{i,j}];
+        plx_numbers         = [plx_numbers length(individualSizes{i,j})];
+        plx_density         = [plx_density length(individualSizes{i,j})/branchLen{i,j}];
+        plx_density_small   = [plx_density_small length(individualSizes{i,j}(individualSizes{i,j}   >=smallSize(1)   & individualSizes{i,j} <= smallSize(2)))/branchLen{i,j}];
+        plx_density_big     = [plx_density_big length(individualSizes{i,j}(individualSizes{i,j}     >=bigSize(1)     & individualSizes{i,j} <= bigSize(2)))/branchLen{i,j}];
+        plx_density_verybig = [plx_density_verybig length(individualSizes{i,j}(individualSizes{i,j} >=veryBigSize(1) & individualSizes{i,j} <= veryBigSize(2)))/branchLen{i,j}];
+
+        plx_density_overall1 = [plx_density_overall1 length(individualSizes{i,j}(individualSizes{i,j}>=0.1 & individualSizes{i,j}<=8))/branchLen{i,j}];
+        plx_density_overall2 = [plx_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=0.5 & individualSizes{i,j}<=8))/branchLen{i,j}];
+        plx_density_overall3 = [plx_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=1   & individualSizes{i,j}<=8))/branchLen{i,j}];
+    end
+    cell_density_plx(i) = mean(plx_density);
+end
+
+plx_count = 1;
+for i = 4:9
+    load(D1{i});
+    clear plx_density;
+    for j = 1:numDendrites
+        plx_density(j) = length(individualSizes{i,j}(individualSizes{i,j}>=1 & individualSizes{i,j}<=8))/branchLen{i,j};
+    end
+    cell_density_plx(plx_count) = mean(plx_density);
+    plx_count = plx_count + 1;
+end
+
+cntr_count = 1;
+for i = 1:3
+    load(D1{i});
+    clear cntr_density;
+    for j = 1:numDendrites
+        cntr_density(j) = length(individualSizes{i,j}(individualSizes{i,j}>=1 & individualSizes{i,j}<=8))/branchLen{i,j};
+    end
+    cell_density_cntr(cntr_count) = mean(cntr_density);
+    cntr_count = cntr_count + 1;
+end
+
+plotTwoConditionsMax(cell_density_plx',cell_density_cntr','PLX','DMSO',saveDir,'Per-Cell','Per-Cell-OverAll' ,'m', 1);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FOR LORENZO: put the interval of picture of the DMSO group (e.g. 6:10 means
+% that the pictures from 6 to 10 are the DMSO trated cells
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+plx_sizes    = [];
+plx_numbers  = [];
+plx_density  = [];
+plx_density_small    = [];
+plx_density_big      = [];
+plx_density_verybig  = [];
+plx_density_overall1 = [];
+plx_density_overall2 = [];
+plx_density_overall3 = [];
+
+cntr_sizes    = [];
+cntr_numbers  = [];
+cntr_density  = [];
+cntr_density_small = [];
+cntr_density_big = [];
+cntr_density_verybig = [];
+cntr_density_overall1 = [];
+cntr_density_overall2 = [];
+cntr_density_overall3 = [];
+
+smallSize   = [0.5 1.5];
+bigSize     = [1.5 4];
+veryBigSize = [4 7.5];
+
+cntr_density_perCell = [];
+k = 1;
+for i = 1:3
+    i
+    load(D1{i});
+    cntr_density_perDend = [];
+    for j = 1:numDendrites
+        j
+        cntr_sizes           = [cntr_sizes individualSizes{i,j}];
+        cntr_numbers         = [cntr_numbers length(individualSizes{i,j})];
+        cntr_density         = [cntr_density length(individualSizes{i,j})/branchLen{i,j}];
+        cntr_density_small   = [cntr_density_small length(individualSizes{i,j}(individualSizes{i,j}   >= smallSize(1)   & individualSizes{i,j} <= smallSize(2)))/branchLen{i,j}];
+        cntr_density_big     = [cntr_density_big length(individualSizes{i,j}(individualSizes{i,j}     >= bigSize(1)     & individualSizes{i,j} <= bigSize(2) ))/branchLen{i,j}];
+        cntr_density_verybig = [cntr_density_verybig length(individualSizes{i,j}(individualSizes{i,j} >= veryBigSize(1) & individualSizes{i,j} <= veryBigSize(2)))/branchLen{i,j}];
+        
+        cntr_density_overall1 = [cntr_density_overall1 length(individualSizes{i,j}(individualSizes{i,j}>=0.1 & individualSizes{i,j}<8))/branchLen{i,j}];
+        cntr_density_overall2 = [cntr_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=0.5 & individualSizes{i,j}<8))/branchLen{i,j}];
+        cntr_density_overall3 = [cntr_density_overall3 length(individualSizes{i,j}(individualSizes{i,j}>=1   & individualSizes{i,j}<8))/branchLen{i,j}];
+        
+        cntr_density_perDend(j) = length(individualSizes{i,j}(individualSizes{i,j}>=1 & individualSizes{i,j}<8))/branchLen{i,j};
+    end
+    cntr_density_perCell(k) = mean(cntr_density_perDend);
+    cell_density_cntr(i) = mean(cntr_density);
+    k = k + 1;
+end
+
+plx_density_perCell = [];
+k = 1;
+for i = 4:9
+    if i < 13
+        load(D1{i});
+    else
+        load(D1{i-1});
+    end
+    
+    plx_density_perDend = [];
+    for j = 1:numDendrites
+        try
+        plx_sizes           = [plx_sizes   individualSizes{i,j}];
+        plx_numbers         = [plx_numbers length(individualSizes{i,j})];
+        plx_density         = [plx_density length(individualSizes{i,j})/branchLen{i,j}];
+        plx_density_small   = [plx_density_small length(individualSizes{i,j}(individualSizes{i,j}   >=smallSize(1)   & individualSizes{i,j} <= smallSize(2)))/branchLen{i,j}];
+        plx_density_big     = [plx_density_big length(individualSizes{i,j}(individualSizes{i,j}     >=bigSize(1)     & individualSizes{i,j} <= bigSize(2)))/branchLen{i,j}];
+        plx_density_verybig = [plx_density_verybig length(individualSizes{i,j}(individualSizes{i,j} >=veryBigSize(1) & individualSizes{i,j} <= veryBigSize(2)))/branchLen{i,j}];
+
+        plx_density_overall1 = [plx_density_overall1 length(individualSizes{i,j}(individualSizes{i,j}>=0.1 & individualSizes{i,j}<=8))/branchLen{i,j}];
+        plx_density_overall2 = [plx_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=0.5 & individualSizes{i,j}<=8))/branchLen{i,j}];
+        plx_density_overall3 = [plx_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=1   & individualSizes{i,j}<=8))/branchLen{i,j}];
+        
+        plx_density_perDend(j) = length(individualSizes{i,j}(individualSizes{i,j}>=1 & individualSizes{i,j}<=8))/branchLen{i,j};
+        catch
+            j
+        end
+    end
+    plx_density_perCell(k) = nanmean(plx_density_perDend)
+    cell_density_plx(i) = nanmean(plx_density);
+    k = k + 1;
+end
+
+figure, plot(cntr_density_perCell);
+hold on, plot(plx_density_perCell,'r');
+%%
+saveDir = 'F:\Lorenzo'; 
+
+plotTwoConditionsMax(plx_density_small',cntr_density_small','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-Small','Density-Small' ,[0 0 1], .6);
+plotTwoConditionsMax(plx_density_big',cntr_density_big','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-Big','Density-Big' ,[0 0 1], .6);
+plotTwoConditionsMax(plx_density_verybig',cntr_density_verybig','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-VeryBig','Density-VeryBig' ,[0 0 1], 1);
+plotTwoConditionsMax(plx_density_overall1',cntr_density_overall1','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-OverAll1','OverAll1' ,[0 0 1], 1);
+plotTwoConditionsMax(plx_density_overall2',cntr_density_overall2','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-OverAll2','OverAll2' ,[0 0 1], 1);
+plotTwoConditionsMax(plx_density_overall3',cntr_density_overall3','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-OverAll3','OverAll3' ,'m', 1);
+%%
+
+% 
+% tic; T1_FMM1 = msfm2d(double(max(tomato,[],3)+1e-8), SourcePoint{1,1}(1:2), true, true); toc;
+% ShortestLine = shortestpath(T1_FMM1,StartPoint{1,1}(1:2),SourcePoint{1,1}(1:2));
+% 
+% figure, imshow(imcomplement(max(tomato,[],3)),[]);
+% hold on, plot(ShortestLine(:,2),ShortestLine(:,1),'r');
+% figure, plot(improfile(max(double(L)>0,[],3),ShortestLine(:,2),ShortestLine(:,1)));
+% 
+% profileL = improfile(max(double(L)>0,[],3),ShortestLine(:,2),ShortestLine(:,1));
+% diffProfileL = diff(profileL);
+% figure, plot(diffProfileL)
+% sum(diffProfileL==1)
+% 
+% save(fullfile(sprintf('%s_info.mat',D1{i}(1:pos(end)-1))), '-struct', 'data');
+
+%%
+Ibin = tomato>graythresh(tomato);
+S    = skeleton(Ibin);
+% Display the skeleton
+figure, imshow(imcomplement(max(tomato,[],3)),[]); hold on;
+for i=1:length(S)
+    L = S{i};
+    plot3(L(:,2),L(:,1),L(:,3),'-','Color',rand(1,3));
+end
+ 
+
+
+%%
+% smallTomato = imresize(tomato,1);
+% figure, imshow(imcomplement(max(smallTomato,[],3)),[]);
+% 
+% clear x;
+% clear y;
+% clear z;
+% 
+% [x,y] = ginput(15);
+%       
+% for k = 1:length(x)
+%    c    = max(squeeze(smallTomato(round(y(k)),round(x(k)),:)));
+%    vals = find(squeeze(smallTomato(round(y(k)),round(x(k)),:))==c)
+%    z(k) = mean(vals);
+%    
+%    SourcePoint = [round(y(1)) round(x(1)) z(1)]';
+%    StartPoint{k}  = [round(y(k)) round(x(k)) z(k)]';
+% end
+% 
+% 
+% smallTomatoBWF = bil_wiener_filt(smallTomato,3,1);
+% figure, imshow(max(smallTomato,[],3),[]);
+% figure, imshow(max(smallTomatoBWF,[],3),[]);
+% 
+% T1_FMM1       = msfm3d(double((smallTomatoBWF)+1e-8), SourcePoint, true, true);
+% %figure, imshow(max(smallTomato,[],3),[]);
+% for k = 1:10
+%     ShortestLine3{k-1} = shortestpath(T1_FMM1,StartPoint{k},SourcePoint);
+%     hold on, plot3(ShortestLine3{k-1}(:,2),ShortestLine3{k-1}(:,1),ShortestLine3{k-1}(:,3),'r');
+%     drawnow;
+% end
+
+
+%% \
+clear all
+close all
+clc
+
+
+plx_sizes    = [];
+plx_numbers  = [];
+plx_density  = [];
+plx_density_small    = [];
+plx_density_big      = [];
+plx_density_verybig  = [];
+plx_density_overall1 = [];
+plx_density_overall2 = [];
+plx_density_overall3 = [];
+
+cntr_sizes    = [];
+cntr_numbers  = [];
+cntr_density  = [];
+cntr_density_small = [];
+cntr_density_big = [];
+cntr_density_verybig = [];
+cntr_density_overall1 = [];
+cntr_density_overall2 = [];
+cntr_density_overall3 = [];
+
+smallSize   = [0.5 1.5];
+bigSize     = [1.5 4];
+veryBigSize = [4 7.5];
+
+% % sudo mount -o remount,rw '/Volumes/workspace/Assembly/Ali'
+% Connect to Server
+%system('\\130.60.51.12\Workspace\Assembly\Lorenzo');
+
+% Read File
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysisToolboxbfmatlab
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysisToolboxbfmatlab\bfmatlab
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysisToolboxZurichCodes
+addpath C:\Users\argunsah\Documents\MATLAB\tSNE_matlab
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysisToolboxRivulet-Neuron-Tracing-Toolbox-master
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysisToolboxPatrick
+addpath W:\Assembly\Ali\Projects\TheoLabAnalysisToolbox
+addpath C:\Users\argunsah\Documents\MATLAB\PatrickAnalysis\Toolbox_Ali
+addpath C:\Users\argunsah\Documents\MATLAB\PatrickAnalysis\Toolbox_Ali\JermanFilt
+% dataFolder  = 'W:\Lorenzo\Data_Microglia\Puncta-Ali';
+dataFolder  = 'W:\Lorenzo\\Lorenzo\Pics_Confocal\Confocal_Microglia Project Images\Microglia_Iontoporations_mSyp_Cx3cl1';
+
+D1              = uipickfiles('FilterSpec',dataFolder);
+load(fullfile('C:\Users\argunsah\Documents\MATLAB\TheoLabAnalysis\Classifiers','ECOC_classifier_Lorenzo_1600x1600_40X.mat'));
+
+xy_size = 0.198;
+z_size  = 0.5;    
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FOR LORENZO: put the interval of picture of the PLX group (e.g. 1:5 means
+% that the pictures from 1 to 5 are the PLX trated cells
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+for i = 1:23
+    load(D1{i});
+    for j = 1:numDendrites
+        plx_sizes            = [plx_sizes   individualSizes{i,j}];
+        plx_numbers          = [plx_numbers length(individualSizes{i,j})];
+        plx_density          = [plx_density length(individualSizes{i,j})/branchLen{i,j}];
+        plx_density_small    = [plx_density_small length(individualSizes{i,j}(individualSizes{i,j}   >=smallSize(1)   & individualSizes{i,j} <= smallSize(2)))/branchLen{i,j}];
+        plx_density_big      = [plx_density_big length(individualSizes{i,j}(individualSizes{i,j}     >=bigSize(1)     & individualSizes{i,j} <= bigSize(2)))/branchLen{i,j}];
+        plx_density_verybig  = [plx_density_verybig length(individualSizes{i,j}(individualSizes{i,j} >=veryBigSize(1) & individualSizes{i,j} <= veryBigSize(2)))/branchLen{i,j}];
+
+        plx_density_overall1 = [plx_density_overall1 length(individualSizes{i,j}(individualSizes{i,j}>=0.1 & individualSizes{i,j}<=8))/branchLen{i,j}];
+        plx_density_overall2 = [plx_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=0.5 & individualSizes{i,j}<=8))/branchLen{i,j}];
+        plx_density_overall3 = [plx_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=1   & individualSizes{i,j}<=8))/branchLen{i,j}];
+    end
+    cell_density_plx(i) = mean(plx_density);
+end
+
+plx_count = 1;
+for i = 13:23
+    load(D1{i});
+    clear plx_density;
+    
+    i = i - 3;
+
+    for j = 1:numDendrites
+        plx_density(j) = length(individualSizes{i,j}(individualSizes{i,j}>=.1 & individualSizes{i,j}<=8))/branchLen{i,j};
+    end
+    cell_density_plx(plx_count) = mean(plx_density);
+    plx_count = plx_count + 1;
+end
+
+cntr_count = 1;
+for i = 1:12
+    load(D1{i});
+    clear cntr_density;
+    if i >= 4
+        i = i - 3;
+    end
+    for j = 1:numDendrites
+        cntr_density(j) = length(individualSizes{i,j}(individualSizes{i,j}>=.1 & individualSizes{i,j}<=8))/branchLen{i,j};
+    end
+    cell_density_cntr(cntr_count) = mean(cntr_density);
+    cntr_count = cntr_count + 1;
+end
+
+saveDir = 'W:\Lorenzo\\Lorenzo\Pics_Confocal\Confocal_Microglia Project Images\Microglia_Iontoporations_mSyp_Cx3cl1';
+plotTwoConditionsMax(cell_density_plx',cell_density_cntr','KO','CNTRL',saveDir,'KO','CNTL' ,'m', 1);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% FOR LORENZO: put the interval of picture of the DMSO group (e.g. 6:10 means
+% that the pictures from 6 to 10 are the DMSO trated cells
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+for i = 1:5
+    i
+    load(D1{i});
+    for j = 1:numDendrites
+        j
+        cntr_sizes           = [cntr_sizes individualSizes{i,j}];
+        cntr_numbers         = [cntr_numbers length(individualSizes{i,j})];
+        cntr_density         = [cntr_density length(individualSizes{i,j})/branchLen{i,j}];
+        cntr_density_small   = [cntr_density_small length(individualSizes{i,j}(individualSizes{i,j}   >= smallSize(1)   & individualSizes{i,j} <= smallSize(2)))/branchLen{i,j}];
+        cntr_density_big     = [cntr_density_big length(individualSizes{i,j}(individualSizes{i,j}     >= bigSize(1)     & individualSizes{i,j} <= bigSize(2) ))/branchLen{i,j}];
+        cntr_density_verybig = [cntr_density_verybig length(individualSizes{i,j}(individualSizes{i,j} >= veryBigSize(1) & individualSizes{i,j} <= veryBigSize(2)))/branchLen{i,j}];
+        
+        cntr_density_overall1 = [cntr_density_overall1 length(individualSizes{i,j}(individualSizes{i,j}>=0.1 & individualSizes{i,j}<8))/branchLen{i,j}];
+        cntr_density_overall2 = [cntr_density_overall2 length(individualSizes{i,j}(individualSizes{i,j}>=0.5 & individualSizes{i,j}<8))/branchLen{i,j}];
+        cntr_density_overall3 = [cntr_density_overall3 length(individualSizes{i,j}(individualSizes{i,j}>=1   & individualSizes{i,j}<8))/branchLen{i,j}];
+    end
+end
+
+saveDir = 'E:\Lorenzo';
+
+plotTwoConditionsMax(plx_density_small',cntr_density_small','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-Small','Density-Small' ,[0 0 1], .4);
+plotTwoConditionsMax(plx_density_big',cntr_density_big','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-Big','Density-Big' ,[0 0 1], .4);
+plotTwoConditionsMax(plx_density_verybig',cntr_density_verybig','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-VeryBig','Density-VeryBig' ,[0 0 1], .4);
+plotTwoConditionsMax(plx_density_overall1',cntr_density_overall1','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-OverAll1','OverAll1' ,[0 0 1], 1);
+plotTwoConditionsMax(plx_density_overall2',cntr_density_overall2','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-OverAll2','OverAll2' ,[0 0 1], 1);
+plotTwoConditionsMax(plx_density_overall3',cntr_density_overall3','PLX','DMSO',saveDir,'PLX-vs-DMSO-Density-OverAll3','OverAll3' ,'m', .6);
+
+
+
+
+
+
+
+
+
