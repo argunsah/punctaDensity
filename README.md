@@ -22,3 +22,4 @@ Part 3 is the manual tracing part.
 
 Part 4 is to read all files to convert R format.
 
+Please leave a comment in the Issues section if you want to use the code but couldn't figure out how to use it exactly.
