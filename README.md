@@ -17,7 +17,7 @@ Part 1 and 2 reads oif files and converts them in matlab format after extracting
 Part 3 is the manual tracing part. 
 
 - When contrast enhancement windows pops up, adjust accordingly and click X to close (Don't click Adjust).
-- Click end of one of the processes. Use 'z' to zoom, 'x' to unzoom. Left click multiple points along the process. Right click determins the last point.
+- Click end of one of the processes. Use 'z' to zoom, 'x' to unzoom. Left click multiple points along the process. Right click determines the last point.
 - If you are happy with tracing, click 'Yes' to accept, 'No' to reject, 'Done' to complete the tracing step,
 
 Part 4 is to read all files to convert R format.
